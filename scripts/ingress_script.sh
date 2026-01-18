@@ -536,5 +536,5 @@ echo "  pkill kvstore"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-# Don't exit - keep nodes running for user experimentation
+# Don't exit - keep nodes running for further manual testing and validation
 read -p "Press Enter to stop all nodes and cleanup..." -r
