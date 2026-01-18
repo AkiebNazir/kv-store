@@ -15,9 +15,6 @@ A production-grade distributed key-value store built in Go, featuring:
 3. [API Reference](#api-reference)
 4. [Testing & Validation](#testing--validation)
 5. [Data Consistency Verification](#data-consistency-verification)
-6. [Performance Benchmarking](#performance-benchmarking)
-7. [Troubleshooting](#troubleshooting)
-8. [Configuration](#configuration)
 
 ---
 
