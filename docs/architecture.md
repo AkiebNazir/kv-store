@@ -589,19 +589,3 @@ SPARSE_INDEX_INTERVAL=128
 
 ---
 
-## Appendix: Comparison with Other Systems
-
-| Feature | kv-store | Redis | Cassandra | MongoDB |
-|---------|---------|-------|-----------|---------|
-| **Persistence** | LSM + WAL | RDB/AOF | LSM | B-Tree |
-| **Replication** | Tunable (N/R/W) | Master-Slave | Tunable | Replica Set |
-| **Consistency** | Tunable | Strong | Tunable | Strong |
-| **Write Speed** | ⚡⚡⚡⚡ | ⚡⚡⚡ | ⚡⚡⚡⚡ | ⚡⚡ |
-| **Read Speed** | ⚡⚡⚡ | ⚡⚡⚡⚡ | ⚡⚡ | ⚡⚡⚡ |
-| **Language** | Go | C | Java | C++ |
-
----
-
-**Document Version**: 1.0  
-**Last Updated**: 2025-01-18  
-**Maintained By**: kv-store Team
