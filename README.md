@@ -45,7 +45,7 @@ go mod tidy
 go build -o kvstore cmd/server/main.go
 
 # Make test scripts executable
-chmod +x *.sh
+chmod +x ./scripts/*.sh
 ```
 
 ---
@@ -56,7 +56,7 @@ chmod +x *.sh
 
 ```bash
 # Start all 3 nodes, seed data, and run tests
-./ingress_script.sh
+./scripts/ingress_script.sh
 ```
 
 This script will:
@@ -67,7 +67,7 @@ This script will:
 5.  Test all endpoints
 6.  Validate data consistency
 
-### Method 2: Manual Startup (For Learning)
+### Method 2: Manual Startup for Manual tests but always spin up 3 nodes Maindatory.
 
 **Terminal 1 - Node 1 (Port 8081):**
 ```bash

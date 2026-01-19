@@ -282,14 +282,16 @@ func (s *Server) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nodes := s.Ring.GetNodes(key, s.Config.ReplicationFactor)
-	results := s.gatherReads(nodes, key)
+	results, contactedCount := s.gatherReads(nodes, key)
 
-	if len(results) < s.Config.ReadQuorum {
+	// With R=2, W=2, N=3: We need at least 2 nodes to respond
+	if contactedCount < s.Config.ReadQuorum {
 		metrics.GlobalMetrics.RecordError()
-		http.Error(w, "Read Quorum Not Met", http.StatusServiceUnavailable)
+		http.Error(w, fmt.Sprintf("Read Quorum Not Met: contacted %d/%d nodes", contactedCount, s.Config.ReadQuorum), http.StatusServiceUnavailable)
 		return
 	}
 
+	// Find the most recent value
 	var finalValue []byte
 	var maxTs uint64
 	found := false
@@ -306,13 +308,13 @@ func (s *Server) HandleGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Key doesn't exist - this is normal, not an error
 	if !found || bytes.Equal(finalValue, []byte("__DELETED__")) {
-		metrics.GlobalMetrics.RecordError()
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 
-	// Deep copy for async repair
+	// Async read repair
 	repairKey := make([]byte, len(key))
 	copy(repairKey, []byte(key))
 	repairValue := make([]byte, len(finalValue))
@@ -729,8 +731,9 @@ func (s *Server) quorumWrite(key, val string) bool {
 	return successCount >= required
 }
 
-func (s *Server) gatherReads(nodes []string, key string) map[string][]byte {
+func (s *Server) gatherReads(nodes []string, key string) (map[string][]byte, int) {
 	results := make(map[string][]byte)
+	contactedCount := 0
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -739,9 +742,11 @@ func (s *Server) gatherReads(nodes []string, key string) map[string][]byte {
 		go func(targetNode string) {
 			defer wg.Done()
 			var val []byte
+			contacted := false
 
 			if targetNode == s.Self {
 				v, ok := s.Engine.GetRaw([]byte(key))
+				contacted = true
 				if ok {
 					val = v
 				}
@@ -749,18 +754,25 @@ func (s *Server) gatherReads(nodes []string, key string) map[string][]byte {
 				v := s.fetchRemoteRaw(targetNode, key)
 				if len(v) > 0 {
 					val = []byte(v)
+					contacted = true
+				} else {
+					// Check if node is reachable
+					contacted = s.isNodeAlive(targetNode)
 				}
 			}
 
-			if len(val) > 0 {
-				mu.Lock()
-				results[targetNode] = val
-				mu.Unlock()
+			mu.Lock()
+			if contacted {
+				contactedCount++
 			}
-		}(node)
+			if len(val) > 0 {
+				results[targetNode] = val
+			}
+			mu.Unlock()
+		}(node) // FIX: Pass node as argument to goroutine
 	}
 	wg.Wait()
-	return results
+	return results, contactedCount
 }
 
 func (s *Server) performReadRepair(key string, correctVal []byte, ts uint64, results map[string][]byte, allNodes []string) {

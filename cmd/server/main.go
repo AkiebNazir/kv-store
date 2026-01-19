@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	// 1. Load Config
+	// Load Config
 	cfg := config.LoadConfig()
 
 	// Override using flags
@@ -34,38 +34,63 @@ func main() {
 	cfg.Peers = *peers
 	cfg.DataDir = *dataDir
 
+	// Parse peer list
+	var peerList []string
+	me := "localhost:" + cfg.Port
+
+	if cfg.Peers != "" {
+		for _, p := range strings.Split(cfg.Peers, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				peerList = append(peerList, p)
+			}
+		}
+	}
+
+	clusterSize := len(peerList)
+
+	// Validate minimum cluster size
+	if clusterSize < 3 {
+		log.Fatalf("ERROR: Minimum cluster size is 3 nodes. Got %d nodes. Please provide at least 3 peer addresses.", clusterSize)
+	}
+
+	// Fixed configuration for 3+ node clusters
+	// R=2, W=2, N=3 ensures strong consistency with fault tolerance
+	cfg.ReplicationFactor = min(3, clusterSize)
+	cfg.ReadQuorum = 2
+	cfg.WriteQuorum = 2
+
 	fmt.Printf("===============================================\n")
 	fmt.Printf(" kv-store Starting...\n")
 	fmt.Printf("===============================================\n")
 	fmt.Printf("Port:             %s\n", cfg.Port)
+	fmt.Printf("Cluster Size:     %d nodes\n", clusterSize)
 	fmt.Printf("Data Directory:   %s\n", cfg.DataDir)
 	fmt.Printf("MemTable Size:    %d MB\n", cfg.MemTableSize/(1024*1024))
 	fmt.Printf("Virtual Nodes:    %d\n", cfg.VirtualNodes)
 	fmt.Printf("Replication (N):  %d\n", cfg.ReplicationFactor)
 	fmt.Printf("Write Quorum (W): %d\n", cfg.WriteQuorum)
 	fmt.Printf("Read Quorum (R):  %d\n", cfg.ReadQuorum)
+	fmt.Printf("Consistency:      Strong (R+W>N)\n")
+	fmt.Printf("Fault Tolerance:  1 node failure\n")
 	fmt.Printf("===============================================\n")
 
-	// 1. Initialize Storage Engine
+	// Initialize Storage Engine
 	nodeDataDir := fmt.Sprintf("%s_%s", cfg.DataDir, cfg.Port)
 	engine := storage.NewEngine(cfg, nodeDataDir)
 
-	// 2. Initialize Cluster Ring
+	// Initialize Cluster Ring
 	ring := cluster.NewRing(cfg.VirtualNodes)
-	me := "localhost:" + cfg.Port
-	ring.AddNode(me)
 
-	if cfg.Peers != "" {
-		for _, p := range strings.Split(cfg.Peers, ",") {
-			p = strings.TrimSpace(p)
-			if p != "" && p != me {
-				ring.AddNode(p)
-				fmt.Printf("✓ Added peer: %s\n", p)
-			}
+	// Add all peers to ring
+	for _, p := range peerList {
+		ring.AddNode(p)
+		if p != me {
+			fmt.Printf("✓ Added peer: %s\n", p)
 		}
 	}
 
-	// 3. Initialize Server with persistent hint store
+	// Initialize Server with persistent hint store
 	server := &api.Server{
 		Engine: engine,
 		Ring:   ring,
@@ -85,9 +110,7 @@ func main() {
 	// Initialize hint store
 	server.HintStore = api.NewHintStore(nodeDataDir)
 
-	// START BACKGROUND WORKERS
-
-	// START HINTED HANDOFF REPLAYER
+	// Start hinted handoff replayer
 	server.StartHintReplayer()
 	fmt.Printf("✓ Hinted Handoff: ACTIVE\n")
 
@@ -138,13 +161,13 @@ func main() {
 	})
 
 	fmt.Printf("===============================================\n")
-	fmt.Printf("kv-store Node running on port %s\n", cfg.Port)
+	fmt.Printf("🚀 kv-store Node running on port %s\n", cfg.Port)
 	fmt.Printf("===============================================\n\n")
 
 	// Setup graceful shutdown
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      nil, // Use DefaultServeMux
+		Handler:      nil,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -173,5 +196,15 @@ func main() {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
+	// Shutdown hint store
+	server.HintStore.Shutdown()
+
 	fmt.Printf("Server stopped\n")
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
